@@ -57,6 +57,8 @@ Model formats supported: YOLOv8, ONNX, or TensorFlow Lite
 
 
 📸 GUI Description
+
+
 The graphical interface is:
 
 Embedded directly within the detection script
@@ -66,9 +68,13 @@ Automatically launches on execution
 Updates live based on the predicted traffic sign (e.g., a red indicator points to the current speed limit)
 
 📄 License
+
+
 This project is licensed under the MIT License.
 Feel free to use, modify, and contribute!
 
 Contributions
+
+
 Contributions are welcome! If you find bugs or want to add features, feel free to open a pull request or issue.
 
