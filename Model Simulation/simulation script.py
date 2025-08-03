@@ -23,7 +23,7 @@ shared_state = {
 state_lock = Lock()
 
 # ==================== Chargement du modèle YOLO ====================
-Valid_model = YOLO("best.pt")  # Remplace par ton chemin exact si besoin
+Valid_model = YOLO("best.pt")  #chemin modéle 
 
 def normalize_image(image):
     return image / 255.0
@@ -363,3 +363,4 @@ def launch_dashboard():
 if __name__ == "__main__":
     threading.Thread(target=launch_dashboard, daemon=True).start()
     launch_tkinter_gui()
+
