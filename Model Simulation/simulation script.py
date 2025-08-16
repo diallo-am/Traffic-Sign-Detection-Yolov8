@@ -234,28 +234,26 @@ def launch_tkinter_gui():
 
         threading.Thread(target=run_video, daemon=True).start()
 
-    def detect_webcam():
-      def run_webcam():
-        # Utilise IP Webcam si fournie, sinon /dev/video0
+   def detect_webcam():
+    def run_webcam():
         src = IP_WEBCAM_URL if IP_WEBCAM_URL else 0
         cap = cv2.VideoCapture(src)
+
+        # Réduction résolution pour fluidité
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        cap.set(cv2.CAP_PROP_FPS, 15)
 
         if not cap.isOpened():
             print("Erreur : webcam/flux non disponible")
             return
 
-        # Réduit le buffering pour avoir moins de décalage
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
         while True:
-            # Vide les frames trop vieilles
-            for _ in range(3):
-                cap.grab()
-
             ret, frame = cap.read()
             if not ret:
                 break
 
+            # Détection uniquement sur une image sur 2 → moins de lag
             resized = resize_image(frame)
             normalized = normalize_image(resized)
             img_u8 = (normalized * 255).astype(np.uint8)
@@ -272,13 +270,17 @@ def launch_tkinter_gui():
                 label = Valid_model.names[cls_id]
                 set_limit_from_label(label)
 
+            # Affichage rapide
             annotated = results[0].plot(line_width=1)
             show_frame_on_label(annotated)
+
+            # Petit délai pour réduire latence Tkinter
+            window.update_idletasks()
             window.update()
 
         cap.release()
 
-      threading.Thread(target=run_webcam, daemon=True).start()
+    threading.Thread(target=run_webcam, daemon=True).start()
 
 
     btn_frame = tk.Frame(window, bg="#f8f8f8")
@@ -491,3 +493,4 @@ if __name__ == "__main__":
     threading.Thread(target=launch_dashboard, daemon=True).start()
     # UI détection
     launch_tkinter_gui()
+
