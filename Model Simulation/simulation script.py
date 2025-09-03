@@ -1,4 +1,3 @@
-import os
 import cv2
 import numpy as np
 import tkinter as tk
@@ -13,28 +12,22 @@ import time
 from threading import Lock
 import random
 
-# ==================== CONFIG GÉNÉRALE ====================
-# (Optionnel) Mets ici l'URL IP Webcam de ton téléphone si tu veux l'utiliser dans "Webcam"
-# Exemple : "http://192.168.1.50:8080/video"
-IP_WEBCAM_URL = "http://192.168.1.101:8080/video"   # laisse vide pour utiliser /dev/video0 (cam USB)
-
-# Latence (s) entre la nouvelle limite détectée et l'ajustement de la vitesse véhicule
+# ==================== CONF ====================
+IP_WEBCAM_URL = "http://192.168.1.--:8080/video"   
 LATENCE = 0.5
-
-# Pas d'accélération/décélération (km/h) à chaque update de la vitesse
 SPEED_STEP = 2
 
-# Fréquence de mise à jour de la simulation (s)
+# Fréquence de mise à jour
 SIM_DT = 0.2
 
-# Seuil d’alerte (si vitesse véhicule > limite + marge)
+# Seuils
 OVERSPEED_MARGIN = 3  # km/h
-OVERSPEED_BEEP_COOLDOWN = 1.5  # secondes entre deux bips
+OVERSPEED_BEEP_COOLDOWN = 1.5  # entre deux bips
 
-# ==================== ÉTAT PARTAGÉ ====================
+
 shared_state = {
-    'limit': None,           # limite détectée (km/h) – valeur par défaut
-    'vehicle_speed': 30,    # vitesse véhicule simulée (km/h)
+    'limit': None,         
+    'vehicle_speed': 30,    # vitesse véhicule initiale simulé
     'rpm': 0.0,
     'gear': 'N',
     'mileage': 14356,
@@ -42,13 +35,12 @@ shared_state = {
 }
 state_lock = Lock()
 
-# Variables internes pour la simulation vitesse
-TARGET_SPEED = 30         # cible vers laquelle le véhicule va converger (suivant limite)
+TARGET_SPEED = 30         
 CURRENT_SPEED = 30        # vitesse actuelle simulée
-LIMIT_TIMEOUT = 5 # secondes après disparition panneau
+LIMIT_TIMEOUT = 5 # temps affichage du panneau
 last_limit_time = 0  # dernière détection
-last_beep_time = 0        # anti-spam pour le bip
-beep_sound = None         # son d'alerte (pygame)
+last_beep_time = 0        
+beep_sound = None         
 
 # ==================== YOLO ====================
 Valid_model = YOLO("best.pt")  # Chemin du modèle
@@ -59,20 +51,19 @@ def normalize_image(image):
 def resize_image(image, size=(640, 640)):
     return cv2.resize(image, size)
 
-# ==================== AUDIO (bip) ====================
+# ==================== AUDIO  ====================
 def init_beep():
-    """Initialise pygame.mixer et génère un petit bip en mémoire (sinus)."""
     global beep_sound
     try:
         pygame.mixer.init()
-        # Génère un bip 700 Hz de 120 ms
+        #bip 700 Hz de 120 ms
         sr = 22050
         dur = 0.12
         t = np.linspace(0, dur, int(sr*dur), endpoint=False)
         wave = (0.5*np.sin(2*np.pi*700*t)).astype(np.float32)
         beep_sound = pygame.mixer.Sound(wave)
     except Exception as e:
-        print("[AUDIO] Impossible d'initialiser le son (pas grave) :", e)
+        print("[AUDIO] Initialisation impossible :", e)
         beep_sound = None
 
 def play_beep():
@@ -88,14 +79,9 @@ def play_beep():
             pass
 
 
-
+# ==================== Mise à jour vitesse ====================
 
 def update_vehicle_speed():
-    """
-    Simule la vitesse véhicule :
-    - Sans panneau récent → variations aléatoires
-    - Avec panneau → ralentir si overspeed
-    """
     global CURRENT_SPEED, TARGET_SPEED, last_limit_time
 
     while True:
@@ -103,51 +89,43 @@ def update_vehicle_speed():
 
         with state_lock:
             limit = shared_state.get('limit', None)
-
-            # Si on voit un panneau, on note l'heure
             if limit is not None:
                 last_limit_time = time.time()
 
-            # Temps écoulé depuis le dernier panneau
             time_since_limit = time.time() - last_limit_time
             panneau_actif = (limit is not None) and (time_since_limit <= LIMIT_TIMEOUT)
 
             if not panneau_actif:
-                # Aucun panneau actif → vitesse libre
                 change = random.uniform(-4, 8)
                 TARGET_SPEED = max(0, min(140, CURRENT_SPEED + change))
             else:
-                # Panneau actif → contrôle vitesse
                 if CURRENT_SPEED > limit + OVERSPEED_MARGIN:
-                    TARGET_SPEED = limit - 1  # descendre sous la limite
+                    TARGET_SPEED = limit - 1  
                 else:
                     change = random.uniform(-4, 8)
                     TARGET_SPEED = max(0, min(limit, CURRENT_SPEED + change))
 
-            # Convergence progressive
             if CURRENT_SPEED < TARGET_SPEED:
                 CURRENT_SPEED = min(CURRENT_SPEED + SPEED_STEP, TARGET_SPEED)
             elif CURRENT_SPEED > TARGET_SPEED:
                 CURRENT_SPEED = max(CURRENT_SPEED - SPEED_STEP, TARGET_SPEED)
 
-            # Publication
             shared_state['vehicle_speed'] = int(round(CURRENT_SPEED))
             shared_state['overspeed'] = (panneau_actif and CURRENT_SPEED > limit + OVERSPEED_MARGIN if limit else False)
 
-            # Après timeout, on efface la limite
             if not panneau_actif:
                 shared_state['limit'] = None
 
         time.sleep(SIM_DT)
 
-# ==================== Tkinter (Détection & Preview) ====================
+# ==================== Tkinter (Détection et affichage) ====================
 def launch_tkinter_gui():
     window = tk.Tk()
-    window.title("Détection YOLOv8 (image / vidéo / webcam/IP)")
+    window.title("Détection(image| vidéo | webcam/IP)")
     window.geometry("700x400")
     window.configure(bg="#f8f8f8")
 
-    header = tk.Label(window, text="Détection de panneaux - Limitation de vitesse",
+    header = tk.Label(window, text="Détection de panneaux",
                       bg="#f8f8f8", fg="#333", font=("Arial", 16, "bold"))
     header.pack(pady=10)
 
@@ -159,14 +137,12 @@ def launch_tkinter_gui():
     video_label.pack(pady=10)
 
     def set_limit_from_label(label: str):
-        """Extrait la limite depuis un label YOLO 'Speed Limit XX' et met à jour TARGET_SPEED et shared_state['limit']."""
         global TARGET_SPEED
         if "Speed Limit" in label:
             try:
                 value = int(label.split()[-1])
                 with state_lock:
                     shared_state['limit'] = value
-                # La cible vitesse suit la limite (comportement 'conduite assistée')
                 TARGET_SPEED = value
             except:
                 pass
@@ -234,26 +210,26 @@ def launch_tkinter_gui():
 
         threading.Thread(target=run_video, daemon=True).start()
 
-   def detect_webcam():
-    def run_webcam():
+    def detect_webcam():
+      def run_webcam():
+        # IP Webcam
         src = IP_WEBCAM_URL if IP_WEBCAM_URL else 0
         cap = cv2.VideoCapture(src)
-
-        # Réduction résolution pour fluidité
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS, 15)
 
         if not cap.isOpened():
             print("Erreur : webcam/flux non disponible")
             return
 
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
         while True:
+            for _ in range(3):
+                cap.grab()
+
             ret, frame = cap.read()
             if not ret:
                 break
 
-            # Détection uniquement sur une image sur 2 → moins de lag
             resized = resize_image(frame)
             normalized = normalize_image(resized)
             img_u8 = (normalized * 255).astype(np.uint8)
@@ -270,17 +246,13 @@ def launch_tkinter_gui():
                 label = Valid_model.names[cls_id]
                 set_limit_from_label(label)
 
-            # Affichage rapide
             annotated = results[0].plot(line_width=1)
             show_frame_on_label(annotated)
-
-            # Petit délai pour réduire latence Tkinter
-            window.update_idletasks()
             window.update()
 
         cap.release()
 
-    threading.Thread(target=run_webcam, daemon=True).start()
+      threading.Thread(target=run_webcam, daemon=True).start()
 
 
     btn_frame = tk.Frame(window, bg="#f8f8f8")
@@ -313,9 +285,9 @@ def launch_dashboard():
     pygame.init()
     init_beep()
 
-    width, height = 900, 520
+    width, height = 700, 440
     screen = pygame.display.set_mode((width, height))
-    pygame.display.set_caption("Tableau de Bord ADAS (Simulation)")
+    pygame.display.set_caption("ADAS (Simulation)")
 
     # Couleurs
     BLACK = (10, 10, 12)
@@ -350,8 +322,8 @@ def launch_dashboard():
 
     def draw_speedometer(speed, limit):
         # Carte
-        rect = (30, 40, 400, 380)
-        draw_card(rect, "Vitesse véhicule")
+        rect = (30, 40, 300, 320)
+        draw_card(rect, "")
         center = (rect[0]+rect[2]//2, rect[1]+rect[3]//2+20)
         radius = 150
 
@@ -390,7 +362,7 @@ def launch_dashboard():
 
 
     def draw_speed_limit_sign(limit_value, pos):
-        # Panneau rond type EU : cerclage rouge + fond blanc + nombre noir
+        # Panneau 
         x, y = pos
         pygame.draw.circle(screen, WHITE, (x, y), 40)
         pygame.draw.circle(screen, RED, (x, y), 40, 10)
@@ -398,45 +370,40 @@ def launch_dashboard():
         screen.blit(txt, (x - txt.get_width()//2, y - txt.get_height()//2))
 
     def draw_tachometer(rpm):
-        rect = (470, 40, 400, 220)
-        draw_card(rect, "Régime moteur")
+        rect = (370, 40, 300, 320)
+        draw_card(rect, "")
         center = (rect[0]+rect[2]//2, rect[1]+rect[3]//2+10)
         radius = 90
-        # Quelques ticks
-        for i, angle in enumerate(range(30, 331, 30)):
+
+        # Graduation
+        for i in range(0, 9):  
+            angle = 30 + i * (300/8)
             rad = math.radians(angle)
             length = 16 if i % 2 == 0 else 10
             start_pos = (center[0] + (radius-10)*math.cos(rad), center[1] + (radius-10)*math.sin(rad))
             end_pos   = (center[0] + (radius-length)*math.cos(rad), center[1] + (radius-length)*math.sin(rad))
             pygame.draw.line(screen, WHITE, start_pos, end_pos, 2)
-            if i % 2 == 0:
-                value = str(i//2)
-                tv = font_xs.render(value, True, WHITE)
-                text_pos = (center[0] + (radius-30)*math.cos(rad), center[1] + (radius-30)*math.sin(rad))
+
+            if i % 1 == 0:  
+                tv = font_xs.render(str(i), True, WHITE)
+                text_pos = (center[0] + (radius-28)*math.cos(rad), center[1] + (radius-28)*math.sin(rad))
                 screen.blit(tv, (text_pos[0]-tv.get_width()/2, text_pos[1]-tv.get_height()/2))
 
-        angle = 30 + (rpm/8.0)*300
+        # Aiguille
+        min_rpm, max_rpm = 0, 8
+        min_angle, max_angle = 30, 330
+        angle = min_angle + (rpm - min_rpm) / (max_rpm - min_rpm) * (max_angle - min_angle)
         rad = math.radians(angle)
         needle_end = (center[0] + (radius-26)*math.cos(rad), center[1] + (radius-26)*math.sin(rad))
         pygame.draw.line(screen, BLUE, center, needle_end, 4)
         pygame.draw.circle(screen, (80, 80, 80), center, 6)
 
+        # Texte numérique
         rpm_text = font_rpm.render(f"{rpm:.1f}", True, LIGHT_BLUE)
         x1000_text = font_small.render("x1000", True, LIGHT_BLUE)
         screen.blit(rpm_text, (center[0]-rpm_text.get_width()/2, center[1]-rpm_text.get_height()/2-8))
         screen.blit(x1000_text, (center[0]-x1000_text.get_width()/2, center[1]+18))
 
-    def draw_gear_and_mileage(gear, mileage):
-        rect = (470, 270, 400, 150)
-        draw_card(rect, "Boîte & Odomètre")
-        # Gear
-        pygame.draw.circle(screen, (70, 70, 75), (rect[0]+80, rect[1]+90), 46, 0)
-        pygame.draw.circle(screen, (110, 110, 120), (rect[0]+80, rect[1]+90), 46, 3)
-        gtxt = font_large.render(gear, True, WHITE)
-        screen.blit(gtxt, (rect[0]+80-gtxt.get_width()/2, rect[1]+90-gtxt.get_height()/2))
-        # Mileage
-        mtxt = font_medium.render(f"{mileage} km", True, YELLOW)
-        screen.blit(mtxt, (rect[0]+170, rect[1]+80 - mtxt.get_height()/2))
 
     clock = pygame.time.Clock()
     running = True
@@ -450,7 +417,6 @@ def launch_dashboard():
             v = shared_state['vehicle_speed']
             limit = shared_state['limit']
             mileage = shared_state['mileage']
-            # RPM/gear simulés en fonction de la vitesse
             if v < 10:
                 rpm = 1.0; gear = "1"
             elif v < 25:
@@ -459,8 +425,10 @@ def launch_dashboard():
                 rpm = 2.5; gear = "3"
             elif v < 80:
                 rpm = 3.2; gear = "4"
+            elif v <120:
+                rpm = 4.6; gear = "5"
             else:
-                rpm = 3.8; gear = "5"
+                rpm= 5; gear="5"
             shared_state['rpm'] = rpm
             shared_state['gear'] = gear
 
@@ -468,14 +436,13 @@ def launch_dashboard():
 
         screen.fill(BLACK)
 
-        # Dessins
         draw_speedometer(v, 30)
         draw_tachometer(rpm)
-        draw_gear_and_mileage(gear, mileage)
+    
 
-        # Bandeau d'alerte si excès
+        # si excès, alerte
         if overspeed:
-            draw_speed_limit_sign(limit, (450,470))
+            draw_speed_limit_sign(limit, (350,400))
             play_beep()
 
         pygame.display.flip()
@@ -487,10 +454,8 @@ def launch_dashboard():
 
 # ==================== Lancement ====================
 if __name__ == "__main__":
-    # Thread simulation vitesse (converge vers la limite)
     threading.Thread(target=update_vehicle_speed, daemon=True).start()
     # Dashboard
     threading.Thread(target=launch_dashboard, daemon=True).start()
-    # UI détection
+    # UI 
     launch_tkinter_gui()
-
